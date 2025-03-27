@@ -1,0 +1,504 @@
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import *
+from tkinter import ttk
+import mysql.connector
+import datetime
+import pandas as pd
+from pandastable import Table
+from PIL import Image, ImageTk
+from email_validator import validate_email, EmailNotValidError
+import bcrypt
+import smtplib
+import ssl
+from email.message import EmailMessage
+
+def change_window_icon(root, icon_path):
+    try:
+        img = tk.PhotoImage(file=icon_path)
+        root.iconphoto(False, img)
+    except tk.TclError:
+        print("Error: Could not load icon file.")
+        
+def billing(username, total_price):
+    conn = mysql.connector.connect(
+    host="hthn.your-database.de",
+    user="tabakis_usr",
+    passwd="zmWa14WP4A8XyRg7",
+    database="tabakis_dbs"
+    )   
+    cursor = conn.cursor()
+    query = "SELECT billing FROM Users WHERE UserName = %s"
+    cursor.execute(query, (username,))
+    billing = cursor.fetchall()
+
+    if billing:
+        cost = billing[0][0]
+        total_cost = cost + total_price
+        cursor = conn.cursor()
+        query = "UPDATE Users SET Billing = %s WHERE UserName = %s"
+        cursor.execute(query, (total_cost, username))
+        conn.commit()
+        print(f"Updated user: {username}, new billing: {total_cost}, rows affected: {cursor.rowcount}") #check oti doulevei to billing 
+
+def send_email(to_email, aithousatainias,imera,Aithousa,seat_number,seat_window, total_price):
+    
+    sender_email = "pythontestkostas@gmail.com"
+    sender_password = "eflo hyhh pnrj wpjb"
+    email_receiver=[to_email,"admin@gmail.com"]
+    subject = "Reservation Confirmation"
+    body = f"Your reservation for {aithousatainias} on {imera} in room {Aithousa} and seat {seat_number} is confirmed and your total is {total_price:.2f} €"
+    messagebox.showinfo("Success", "Your reservation has been completed!.") 
+    seat_window.destroy()
+    
+    try:
+        msg = EmailMessage()
+        msg['From'] = sender_email
+        msg['To'] = email_receiver
+        msg['Subject'] = subject
+        msg.set_content(body, 'plain', 'utf-8')  
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+            smtp.login(sender_email, sender_password)
+            smtp.sendmail(sender_email, email_receiver, msg.as_string())
+        print("Email sent successfully!")
+    except smtplib.SMTPAuthenticationError:
+        print("Error: SMTP Authentication failed. Check your app password.")
+    except smtplib.SMTPException as e:
+        print(f"Error: SMTP error occurred: {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+def hash_password(password):
+    """Hashes a password using bcrypt and returns the hash."""
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+    return hashed_password
+
+def verify_password(password, hashed_password):
+    """Verifies a password against a stored bcrypt hash."""
+    is_valid = bcrypt.checkpw(password.encode('utf-8'), hashed_password)
+    return is_valid 
+
+def reservation(Aithousa, seat_number, username):
+    try:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "SELECT Tainia FROM Aithouses WHERE NoumeroAithousas = %s"
+        cursor.execute(query, (Aithousa,))
+        Aithousa_result = cursor.fetchall()
+        if len(Aithousa_result) > 2 : #elegxos oti einai mono mia aithousa
+            aithousatainias = Aithousa_result[2][0] #elegxos poia aithousa einai       
+        cursor = conn.cursor()
+        query = "SELECT Email FROM Users WHERE UserName = %s"
+        values = (username,)  
+        cursor.execute(query, values)
+        email_result = cursor.fetchall()
+        cursor = conn.cursor()
+        if email_result:  #elegxos email
+            emailkratis = email_result[0][0]  #evresi email
+            imera = datetime.date.today()
+            query = "INSERT INTO Reservations(NoumerOKratisis, EmailKratisis, ThesiKratisis, AithousaKratisis, ImerominiaKratisis, TainiaKratisis) VALUES (%s, %s, %s, %s, %s, %s)"
+            values = (0, emailkratis, seat_number, Aithousa, imera, aithousatainias)
+            cursor.execute(query, values)
+            conn.commit() 
+        else:
+            messagebox.showerror("Error", "Username not found.") 
+    except mysql.connector.Error as err:
+        messagebox.showerror("Error", f"Database error: {err}")
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+
+def sqlconn(firstname, lastname, email, UserName, password):
+    fname = firstname.get()
+    lname = lastname.get()
+    mail = email.get()
+    usrname = UserName.get()
+    passwd = password.get()
+    signupd = datetime.date.today()
+    act = 'Yes'
+    admin = "No"
+    hashed_password = hash_password(passwd)
+    billing=0
+    try:
+        emailinfo = validate_email(mail, check_deliverability=False)# elegxos typou email ama perilamvanei @ kai .
+        wrong_mail = True
+
+    except EmailNotValidError as e:
+        messagebox.showerror("Error", f"Invalid email: {e}")
+        wrong_mail = False
+        
+    if wrong_mail:
+        try:
+            conn = mysql.connector.connect(
+                host="hthn.your-database.de",
+                user="tabakis_usr",
+                passwd="zmWa14WP4A8XyRg7",
+                database="tabakis_dbs"
+            )
+            cursor = conn.cursor()
+            query = "INSERT INTO Users (FirstName, LastName, Email, Username, Password, SignUpDate, ActiveUser, Admin, billing) VALUES (%s, %s, %s, %s, %s, %s, %s, %s,%s)"
+            values = (fname, lname, mail, usrname, hashed_password.decode(), signupd, act, admin,billing) 
+            cursor.execute(query, values)
+            conn.commit()
+            messagebox.showinfo("Success", "User registered successfully!")
+            signup_window.destroy()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Error", f"Database error: {err}")
+            if 'conn' in locals() and conn.is_connected():
+                conn.rollback()
+        finally:
+            if 'conn' in locals() and conn.is_connected():
+                cursor.close()
+                conn.close()
+
+def login_window(master):
+    login_window = tk.Toplevel(master)
+    login_window.title("Login Form")
+
+    username = tk.StringVar()
+    tk.Label(login_window, text="UserName").grid(row=0, column=0, padx=10, pady=5)
+    username_entry = tk.Entry(login_window, textvariable=username)
+    username_entry.grid(row=1, column=0, padx=10, pady=5)
+
+    password = tk.StringVar()
+    tk.Label(login_window, text="Password").grid(row=2, column=0, padx=10, pady=5)
+    password_entry = tk.Entry(login_window, textvariable=password, show="*")
+    password_entry.grid(row=3, column=0, padx=10, pady=5)
+
+    tk.Button(login_window, text="Login", command=lambda: check_user(username.get(), password.get(), login_window,master)).grid(row=4, column=0, padx=10, pady=5)
+
+def SignUp(master):
+    global signup_window
+    signup_window = tk.Toplevel(master)
+    signup_window.title("Sign Up Form")
+
+    firstname = tk.StringVar()
+    tk.Label(signup_window, text="First Name").grid(row=0, column=0, padx=10, pady=5)
+    First_Name = tk.Entry(signup_window, textvariable=firstname)
+    First_Name.grid(row=1, column=0, padx=10, pady=5)
+
+    lastname = tk.StringVar()
+    tk.Label(signup_window, text="Last Name").grid(row=2, column=0, padx=10, pady=5)
+    Last_Name = tk.Entry(signup_window, textvariable=lastname)
+    Last_Name.grid(row=3, column=0, padx=10, pady=5)
+
+    email = tk.StringVar()
+    tk.Label(signup_window, text="Email").grid(row=4, column=0, padx=10, pady=5)
+    Email_entry = tk.Entry(signup_window, textvariable=email)
+    Email_entry.grid(row=5, column=0, padx=10, pady=5)
+
+    UserName = tk.StringVar()
+    tk.Label(signup_window, text="UserName").grid(row=6, column=0, padx=10, pady=5)
+    UserName_entry = tk.Entry(signup_window, textvariable=UserName)
+    UserName_entry.grid(row=7, column=0, padx=10, pady=5)
+
+    password = tk.StringVar()
+    tk.Label(signup_window, text="Password").grid(row=8, column=0, padx=10, pady=5)
+    password_entry = tk.Entry(signup_window, textvariable=password, show='*')
+    password_entry.grid(row=9, column=0, padx=10, pady=5)
+
+    tk.Button(signup_window, text="Submit",
+              command=lambda: sqlconn(firstname, lastname, email, UserName, password)).grid(row=10, column=0, padx=10, pady=5)
+
+class PndasApp():
+    def __init__(self, master) -> None:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "SELECT * FROM Users"
+        df = pd.read_sql_query(query, conn)
+        conn.commit()
+
+        self.frame = tk.Frame(master)
+        self.frame.pack(padx=10, pady=10)
+        self.table = Table(self.frame, dataframe=df, showstasusbar=True, showtoolbar=True)
+        self.table.show()
+
+def get_seat_data(Aithousa):
+    try:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "SELECT NoumeroThesis, Diathesimi FROM Aithouses WHERE NoumeroAithousas = %s"
+        cursor.execute(query, (Aithousa,))
+        results = cursor.fetchall()
+        conn.close()
+        return results
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return None
+    
+def get_seat_price(Aithousa):
+    if Aithousa==1:
+        return 10.00
+    elif Aithousa==2:
+        return 7.50
+    else:
+        return 6.00
+ 
+def display_seats(Aithousa, seat_window, username):
+    seats = get_seat_data(Aithousa)
+    
+    if seats:
+        df = pd.DataFrame(seats, columns=["Seat Number", "Available"])
+        num_seats = len(df)
+        num_rows = (num_seats + 4) // 5
+        seat_buttons = []
+        selected_seats = [] #theseis epilogis
+        total_price=0
+
+        def select_seat(seat_number):
+            nonlocal total_price
+            if seat_number in selected_seats:
+                selected_seats.remove(seat_number)
+                total_price -= get_seat_price(Aithousa)  # afairesi timis ama epileksei na mhn parei telika 
+            else:
+                selected_seats.append(seat_number)
+                total_price += get_seat_price(Aithousa)  # timi gia kathe ticket
+            for button in seat_buttons:
+                if int(button["text"]) == seat_number:
+                    if button["bg"] == "green":
+                        button.config(bg="blue")
+                    elif button["bg"] == "blue":
+                        button.config(bg="green")
+                    else:
+                        print("Seat not available")
+                    break
+            price_label = tk.Label(seat_window, text=f"Total Price: {total_price:.2f} €") 
+            price_label.grid(row=num_rows, column=0, columnspan=5, pady=5)
+        def submit_seats():
+            if not selected_seats:
+                messagebox.showerror("Error", "Please select at least one seat.")
+                return
+            for seat in selected_seats:
+                reservation(Aithousa, seat, username)
+                choose_seat(Aithousa, seat)
+            conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+            )   
+            cursor = conn.cursor()
+            query = "SELECT Tainia FROM Aithouses WHERE NoumeroAithousas = %s"
+            cursor.execute(query, (Aithousa,))
+            Aithousa_result = cursor.fetchall()
+            if len(Aithousa_result) > 2 : #elegxos oti einai mono mia aithousa
+                aithousatainias = Aithousa_result[2][0] #elegxos poia aithousa einai 
+            cursor = conn.cursor()
+            query = "SELECT Email FROM Users WHERE UserName = %s"
+            values = (username,)  
+            cursor.execute(query, values)
+            email_result = cursor.fetchall()
+            cursor = conn.cursor()
+            if email_result:  #elegxos email
+                emailkratis = email_result[0][0]  #evresi email
+                imera = datetime.date.today()
+                send_email(emailkratis, aithousatainias,imera,Aithousa,selected_seats,seat_window, total_price)
+            billing(username,total_price)
+                
+        for row_index in range(num_rows):
+            for col_index in range(5):
+                seat_index = row_index * 5 + col_index
+                if seat_index < num_seats:
+                    seat_number = int(df.loc[seat_index, "Seat Number"])
+                    available = df.loc[seat_index, "Available"]
+                    button_color = "green" if available == "Yes" else "red"
+                    seat_button = tk.Button(seat_window, text=str(seat_number), bg=button_color, width=5,
+                                            height=2, command=lambda seat=seat_number: select_seat(seat),)
+                    seat_button.grid(row=row_index, column=col_index, padx=5, pady=5)
+                    seat_buttons.append(seat_button)
+                    
+        submit_button = tk.Button(seat_window, text="Select Seats", width=20, height=1,command=submit_seats)
+        submit_button.grid(row=num_rows, column=2, padx=5, pady=5)
+
+        return df
+    return None
+
+def choose_seat(Aithousa, seat_number):
+    try:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "UPDATE Aithouses SET Diathesimi = 'No' WHERE NoumeroAithousas= %s AND NoumeroThesis = %s AND Diathesimi = 'Yes'"
+        cursor.execute(query, (Aithousa, seat_number))
+        conn.commit()
+        conn.close()
+        return cursor.rowcount > 0  # ginetai true otan ginei h kratisi
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        return False
+
+def seat_selection_window(Aithousa, master, username, Tainia,movie_menu_window):
+    seat_window = tk.Toplevel(master)
+    seat_window.title("Choose a Seat")
+    seats_df = display_seats(Aithousa, seat_window, username)
+    movie_menu_window.destroy()
+
+def movie_menu(master, kratisi, username):
+    """Creates a menu to select a movie."""
+    movie_menu_window = tk.Toplevel(master)
+    movie_menu_window.title("Movie Selection")
+    kratisi.destroy()
+    try:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "SELECT NoumeroAithousas, Tainia FROM Aithouses"  
+        cursor.execute(query)
+        movie_data = cursor.fetchall()  
+        conn.close()
+        i = 0
+        y = 0
+        j = 0
+        o = 0
+        r = 0
+        for NoumeroAithousas, Tainia in movie_data:  # Iterate through the movie data
+            if Tainia == "John Wick" and j == 0:
+                Aithousa = 1
+                image = Image.open(r"C:\Users\KostasTabakis\Desktop\John_Wick.jpg")
+                j += 1
+            elif Tainia == "Openheimer" and o == 0:  # Corrected spelling
+                Aithousa = 2
+                image = Image.open(r"C:\Users\KostasTabakis\Desktop\Openheimer.jpg")
+                o += 1
+            elif Tainia == "Rocky 2" and r == 0:
+                Aithousa = 3
+                image = Image.open(r"C:\Users\KostasTabakis\Desktop\rockie2.jpg")
+                r += 1
+            else:
+                continue
+            photo = ImageTk.PhotoImage(image)
+            image_label = tk.Label(movie_menu_window, image=photo)
+            image_label.image = photo  # Keep a reference
+            image_label.grid(row=0, column=y, pady=20)
+            y += 1
+            movie_button = tk.Button(movie_menu_window, text=Tainia, width=20, height=1,
+                                     command=lambda Aithousa=Aithousa: seat_selection_window(Aithousa, master, username, Tainia,movie_menu_window))
+            movie_button.grid(row=1, column=i, padx=50, pady=30)
+            i += 1
+    except mysql.connector.Error as err:
+        print(f"Database error: {err}")
+        tk.messagebox.showerror("Error", "Could not load movies.")
+
+def reservation_menu(master, username):
+    kratisi = tk.Toplevel(master)
+    kratisi.title("Movie Ticket ")
+    movie_button= tk.Button(kratisi, text="Select Movie", width=25, height=1,
+                                     command=lambda: movie_menu(master, kratisi, username))
+    movie_button.grid(row=1, column=0, padx=150, pady=30)
+
+def check_user(username, password, login_window,master):
+    login_window.destroy()
+    try:
+        conn = mysql.connector.connect(
+            host="hthn.your-database.de",
+            user="tabakis_usr",
+            passwd="zmWa14WP4A8XyRg7",  
+            database="tabakis_dbs"
+        )
+        cursor = conn.cursor()
+        query = "SELECT * FROM Users WHERE UserName = %s"
+        values = (username,)
+        cursor.execute(query, values)
+        user_result = cursor.fetchone()
+        
+        if user_result:
+            hashed_password = user_result[5]
+            hashed_password_bytes = hashed_password.encode('utf-8')  # metatropi tou kodikou se katastasi gia elegxo 
+            is_valid = verify_password(password, hashed_password_bytes)
+            if is_valid: #elegxos ama o kodikos me ton user einai sosta
+                messagebox.showinfo("Success", "Login successful!")
+                query = "SELECT * FROM Users WHERE UserName = %s AND Admin = %s"
+                values = (username, "Yes")
+                cursor.execute(query, values)
+                admin_result = cursor.fetchone()
+                if admin_result:
+                    admin_window = tk.Toplevel(master)
+                    admin_window.title("Pinakas User")
+                    admin_window.geometry("800x500")
+                    admin_window.configure(background='#31363b')
+                    PndasApp(admin_window)
+                    return True, True  
+                else:
+                    reservation_menu(master, username)
+                    return True, False  
+            else:
+                messagebox.showerror("Error", "Incorrect password.")
+                return False, False  # Login fail.
+        else:
+            messagebox.showerror("Error", "User not found.")
+            return False, False  # Login fail.
+
+    except mysql.connector.Error as err:
+        messagebox.showerror("Database Error", f"Database error: {err}")
+        return False, False  # Database error.
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return False, False  # unexpected error
+    finally:
+        if conn and conn.is_connected():
+            cursor.close()
+            conn.close()
+   
+def main():    
+    master = tk.Tk()
+    master.title("Main Menu")
+    master.geometry("800x500")
+    # master.configure(background='#31363b')
+    icon_file_path = r"C:\Users\KostasTabakis\Desktop\icons8-movie-ticket-48.png"
+    change_window_icon(master, icon_file_path)
+
+    image = Image.open(r"C:\Users\KostasTabakis\Desktop\cinema.jpg")
+    bg = ImageTk.PhotoImage(image)
+    label1 = Label(master, image=bg)
+    label1.place(x=0, y=0)
+    label1.image = bg
+
+    # Create buttons
+    button1 = tk.Button(master, text="SignUp", width=20, height=1, command=lambda:SignUp(master))
+    button2 = tk.Button(master, text="Login", width=20, height=1, command=lambda:login_window(master))
+    button3 = tk.Button(master, text="Exit", width=25, height=1, command=master.quit)
+
+    # Place buttons with grid
+
+    button1.grid(row=2, column=0, padx=150, pady=30)  
+    button2.grid(row=2, column=1, padx=0, pady=30)  
+    button3.grid(row=3, column=0, columnspan=2, pady=30)  
+
+    # Configure grid weights to center content
+
+    master.grid_columnconfigure(0, weight=3)
+    master.grid_columnconfigure(1, weight=3)
+    master.grid_columnconfigure(2, weight=3)
+    master.grid_rowconfigure(0, weight=3)
+    master.grid_rowconfigure(1, weight=3)
+    master.grid_rowconfigure(2, weight=3)
+
+    master.mainloop()
+    
+if __name__ == "__main__":
+    main()
